@@ -1,0 +1,102 @@
+```md
+# 🔍 PROMPT DE AUDITORIA, REESTRUTURAÇÃO E MANUTENÇÃO COMPLETA DO CÓDIGO
+
+<task>
+  <objective>
+    Realizar uma auditoria completa em **todas as pastas, arquivos e módulos da plataforma**, incluindo:
+    - Front-end
+    - Back-end
+    - Integrações externas
+    - Hooks
+    - Componentes
+    - Serviços
+    - Rotas
+    - Formulários
+    - Webhooks
+    - Funções RPC
+    - Endpoints REST
+    - Lógica de estado
+    - Estrutura de pastas
+    - Regras de negócio
+  </objective>
+
+  <requirements>
+    1. Ler e analisar **100% dos arquivos** do projeto.
+    2. Identificar:
+       - Erros lógicos ou semânticos
+       - Bugs de fluxo
+       - Trechos de código redundantes
+       - Duplicidades
+       - Funções muito grandes (Refactor Needed)
+       - Código não modularizado
+       - Falta de tipagem consistente
+       - Violações de boas práticas
+       - Consultas ineficientes
+       - Partes que devem ser movidas para hooks, services ou utils
+       - Possíveis problemas de segurança
+       - Partes que quebram padrões de arquitetura
+    3. Propor e executar:
+       - Refatoração completa em componentes menores
+       - Separação total entre front-end e back-end (se ainda não estiver)
+       - Criação de serviços reutilizáveis
+       - Melhoria da arquitetura com divisão clara:
+         - /frontend
+         - /backend
+         - /core
+         - /shared
+       - Padronização de nomenclatura
+       - Melhoria de tipagem TypeScript
+       - Otimização de performance
+       - Correção de fluxos inconsistentes
+       - Melhoria de formulários e validações
+       - Correção de endpoints e chamadas Supabase
+    4. No final:
+       - Gerar um relatório técnico completo
+       - Gerar o código refatorado FINAL e corrigido
+       - Entregar tudo já organizado e pronto para uso
+  </requirements>
+
+  <fallback>
+    Se durante a auditoria houver falha na cadeia de raciocínio, perda de contexto ou interrupção,
+    **retome automaticamente pelo histórico local do projeto**.
+
+    Caso a LLM fique travada por **mais de 20 segundos sem progresso**, utilize fallback para respostas
+    baseadas em:
+    - Análise estrutural de arquivos
+    - Histórico do cliente no banco de dados
+    - Padrões pré-existentes do projeto
+  </fallback>
+
+  <deep_analysis>
+    Executar análise em múltiplas camadas:
+    - <layer1>Estrutura de pastas</layer1>
+    - <layer2>Arquitetura atual</layer2>
+    - <layer3>Qualidade dos componentes</layer3>
+    - <layer4>Qualidade da lógica</layer4>
+    - <layer5>Aderência a boas práticas</layer5>
+    - <layer6>Fluxos de usuário</layer6>
+    - <layer7>Fluxos assíncronos</layer7>
+    - <layer8>Segurança</layer8>
+    - <layer9>Conexões de dados</layer9>
+    - <layer10>Performance</layer10>
+  </deep_analysis>
+
+  <deliverables>
+    <d1>Relatório técnico completo</d1>
+    <d2>Plano de melhorias</d2>
+    <d3>Refatoração integral do código</d3>
+    <d4>Reorganização estrutural do projeto</d4>
+    <d5>Correções automáticas de bugs</d5>
+    <d6>Criação de componentes reutilizáveis</d6>
+    <d7>Versão final revisada e otimizada</d7>
+  </deliverables>
+
+  <style>
+    - Utilize explicações diretas
+    - Traga exemplos reais extraídos do próprio código
+    - Mantenha padrão técnico profissional
+    - Sempre entregue o código refatorado completo ao final
+  </style>
+
+</task>
+```md

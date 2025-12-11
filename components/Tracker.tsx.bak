@@ -1,0 +1,1286 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend 
+} from 'recharts';
+import { CheckCircle, PlusCircle, TrendingUp, Bot, Send, Target, Loader2, Gauge, AlertCircle, Trophy, User as UserIcon, Zap, Calculator, WifiOff } from 'lucide-react';
+import { getLogs, saveLog, getLeaderboard } from '../services/storageService';
+import { DailyLog, TeamMember, User } from '../types';
+import { GoogleGenAI } from "@google/genai";
+import { LOCAL_KNOWLEDGE_BASE, QUICK_ACTIONS } from '../constants';
+import AdminPanel from './AdminPanel';
+import EarningsCalculator from './Calculator';
+
+// --- RAG SEARCH ENGINE UTILITIES ---
+
+const STOP_WORDS = new Set([
+  'a', 'o', 'as', 'os', 'um', 'uma', 'uns', 'umas', 'de', 'do', 'da', 'dos', 'das', 
+  'em', 'no', 'na', 'nos', 'nas', 
+  'por', 'pelo', 'pela', 'pelos', 'pelas', 'para', 'com', 'sem', 'e', 'ou', 'mas', 'que', 'se', 'como', 'quando', 
+  'onde', 'quem', 'qual', 'quais', 'quanto', 'quantos', 'é', 'são', 'foi', 'foram', 'ser', 'estar', 'ter', 'haver',
+  'eu', 'tu', 'ele', 'ela', 'nós', 'vós', 'eles', 'elas', 'meu', 'teu', 'seu', 'nosso', 'vosso', 'isso', 'aquilo',
+  'este', 'esta', 'esse', 'essa', 'aquele', 'aquela', 'muito', 'pouco', 'mais', 'menos', 'não', 'sim', 'então', 'logo'
+]);
+
+const stemWord = (word: string): string => {
+  // Very basic Portuguese stemmer (suffix removal)
+  return word.toLowerCase()
+    .replace(/(ar|er|ir|or)$/, '') // verbs infinitive
+    .replace(/(s|es)$/, '') // plurals
+    .replace(/(indo|endo|ando)$/, '') // gerund
+    .replace(/(mente)$/, '') // adverbs
+    .replace(/(oso|osa)$/, '') // adjectives
+    .replace(/(a|o|e)$/, ''); // gender/theme vowel
+};
+
+const tokenize = (text: string): string[] => {
+  return text
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove accents
+    .replace(/[^\w\s]/g, '') // Remove punctuation
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w)) // Filter stop words and short words
+    .map(stemWord);
+};
+
+interface KnowledgeChunk {
+  title: string;
+  content: string;
+  tokens: string[];
+  originalText: string;
+}
+
+// External RAG content to be integrated with the local knowledge base
+const EXTERNAL_RAG_CONTENT = `
+# ARQUIVO RAG 1 - RELATÓRIO DE ESTRATÉGIA COMERCIAL
+
+## I. Introdução Estratégica: O Paradigma Data-Driven na Distribuição
+
+A performance superior no setor de distribuição, marcado por uma concorrência acirrada e consumidores cada vez mais exigentes, exige uma redefinição das prioridades comerciais. O êxito vai além das táticas de venda isoladas; ele reside na construção de um framework estratégico robusto, centrado na inteligência de dados e na excelência do relacionamento com o cliente.
+
+### 1.1. O Cenário Atual e a Convergência Vendas-Atendimento
+
+A competitividade moderna demanda uma compreensão profunda do comportamento de compra e a capacidade de adaptar rapidamente as ofertas. Para os distribuidores, isso implica uma integração funcional onde as áreas de Vendas e Atendimento, incluindo Logística e Financeiro, operem em plena sintonia. O sucesso na execução de vendas depende de uma comunicação clara e sem ruídos entre todos os setores da organização, garantindo o escoamento eficiente dos produtos e o alinhamento das atividades-chave.
+
+### 1.2. O Papel da Tecnologia como Habilitador de Produtividade
+
+A eficiência de vendas (fazer mais com menos tempo) e a eficácia de vendas (fechar o negócio certo) são conceitos inseparáveis. Para maximizar a produtividade dos distribuidores, a tecnologia se torna crucial. A utilização de sistemas de Gestão de Relacionamento com o Cliente (CRM) e de Planejamento de Recursos Empresariais (ERP) permite a automação de fluxos de trabalho e o rastreamento detalhado de atividades.
+
+A infraestrutura tecnológica adequada (CRM/ERP) é o pré-requisito fundamental para a eficácia do distribuidor. Quando os sistemas estão integrados, processos que demandavam horas passam a ser concluídos em minutos, reduzindo o estresse operacional e o retrabalho. Essa otimização de tempo é essencial, pois libera a equipe de tarefas burocráticas para que possam dedicar maior foco em atividades de alto valor, como a análise de dados, a criatividade na prospecção e a negociação consultiva com clientes. Sem essa fundação tecnológica sólida, o distribuidor não consegue alocar tempo para o relacionamento estratégico e a análise de desempenho.
+
+## II. Inteligência Comercial: Transformando Histórico de Vendas em Oportunidades
+
+O histórico de vendas é o principal ativo estratégico de um distribuidor, fornecendo a base empírica para todas as decisões de mercado. O seu uso eficiente move a operação de uma gestão reativa para um modelo preditivo.
+
+### 2.1. Acesso Estratégico e Organização do Histórico de Clientes
+
+Para que o histórico seja útil, ele precisa ser centralizado e de fácil acesso. Organizar os dados em um CRM é vital para uma gestão comercial estratégica, garantindo que os dados estejam sempre prontos para gerar percepções valiosas. A ausência de acesso imediato ao histórico de pedidos do cliente no cotidiano compromete significativamente a performance de vendas.
+
+Ao monitorar o histórico de vendas, a gestão obtém acesso a indicadores criados a partir de dados reais e precisos, facilitando a tomada de decisões mais estratégicas. Especificamente no setor de distribuição, o histórico possibilita a previsão de tendências de consumo e a projeção de necessidades futuras, auxiliando na criação de estratégias assertivas, como promoções para produtos de baixa saída ou reforço de estoque para itens de alta procura em épocas sazonais.
+
+Adicionalmente, o histórico serve como uma ferramenta de gestão de risco. Ele auxilia na identificação de consumidores que historicamente apresentam dificuldades em cumprir obrigações financeiras, orientando a decisão de vender ou não a prazo e influenciando diretamente a saúde financeira do negócio. A desorganização ou a falta de acesso ao histórico gera decisões subjetivas e resulta em tempo desperdiçado em retrabalho, diminuindo o foco na negociação e no relacionamento com o cliente.
+
+### 2.2. Segmentação Acionável: A Matriz RFV (Recência, Frequência, Valor Monetário)
+
+A Matriz RFV (ou RFM) é a metodologia mais eficaz para segmentar a base de clientes com base em seu comportamento transacional, permitindo a criação de campanhas personalizadas altamente direcionadas.
+
+#### 2.2.1. Definição e Processo de Pontuação
+
+A matriz utiliza três indicadores-chave para segmentação:
+- **Recência (R)**: Mede o tempo decorrido desde a última compra. Clientes que compraram mais recentemente recebem pontuações mais altas, indicando maior engajamento.
+- **Frequência (F)**: Avalia a regularidade com que o cliente realiza compras em um determinado período.
+- **Valor Monetário (V)**: Reflete o gasto total ou médio do cliente.
+
+O processo de segmentação RFV envolve classificar os clientes, tipicamente em uma escala de 1 a 5, onde os 20% melhores em cada critério recebem a pontuação máxima (5). Ao cruzar essas pontuações, o distribuidor pode identificar perfis distintos, desde os mais engajados até aqueles que estão próximos de se tornar inativos.
+
+A aplicação da Matriz RFV é essencial, pois as campanhas genéricas deixaram de ser eficazes. A segmentação permite abordagens personalizadas para reativar clientes "dormindo", fidelizar compradores frequentes com benefícios VIP e estimular novos clientes a se tornarem recorrentes, tornando a comunicação mais eficaz.
+
+##### Exemplo de Segmentação RFV e Ações Estratégicas:
+
+| Segmento RFV | Perfil Comportamental | Ação Estratégica Primária | Objetivo |
+|--------------|----------------------|---------------------------|----------|
+| Clientes Leais (555) | Compra recente, frequente, alto gasto | Programas de fidelidade, ofertas exclusivas (VIP) | Retenção e estímulo ao Word-of-Mouth |
+| Em Risco (4XX - 5XX) | Compra recente, mas frequência/valor declinando | Prospecção consultiva de Upsell/Cross-Sell | Aumentar Ticket Médio/Recorrência |
+| Clientes Dormindo (1XX - 2XX) | Não compram há muito tempo, mas tinham histórico positivo | Campanhas de reativação com ofertas de alto valor | Recuperação de Receita Perdida |
+| Novos Clientes (511) | Primeira compra recente | Onboarding proativo e follow-up para incentivar a segunda compra | Aceleração para Recorrência |
+
+#### 2.2.2. A Evolução da Segmentação
+
+Embora o modelo RFV seja simples de implementar e ofereça ótimos resultados, ele se limita a apenas três atributos. Para distribuidores que buscam um crescimento mais sofisticado, a evolução natural é incorporar algoritmos de machine learning. Essas técnicas permitem a criação de segmentos baseados em uma infinidade de atributos, como região, número de produtos devolvidos, e taxa de cancelamentos, proporcionando uma granularidade de dados superior à do modelo tradicional.
+
+### 2.3. Estratégias de Upsell e Cross-Sell Baseadas em Dados
+
+A análise histórica deve ser aplicada para identificar oportunidades de venda incremental. As estratégias de Upsell (vender uma versão melhor ou mais cara) e Cross-Sell (vender produtos complementares) são altamente eficazes quando baseadas em padrões de compra anteriores. O distribuidor deve analisar o que o cliente comprou e, crucialmente, o que ele deixou de comprar que seria logicamente complementar ao seu pedido habitual.
+
+A criação de ofertas complementares, ou a sugestão de versões premium, deve ocorrer em momentos estratégicos, como durante o processo de checkout ou em um follow-up proativo após a primeira compra. A inclusão de pacotes promocionais ou "ofertas por tempo limitado" pode criar um senso de urgência e aumentar o valor percebido, potencializando a taxa de sucesso dessas abordagens.
+
+## III. Gestão de Clientes: Dominando Objeções e Conflitos
+
+A capacidade de identificar e contornar objeções com profissionalismo e empatia é o cerne do atendimento de alta performance. Objeções são frequentemente o resultado de incertezas ou dores não endereçadas, e não uma rejeição final.
+
+### 3.1. Identificação de Sinais de Resistência (Verbal e Não Verbal)
+
+O primeiro passo é reconhecer os sinais de resistência. As objeções verbais mais comuns se agrupam em categorias previsíveis, como Preço ("É muito caro"), Necessidade ("Não precisamos disto"), Valor ("Não vejo o benefício"), Urgência ("Não é o momento certo") e Concorrência ("Já trabalho com o concorrente X").
+
+No entanto, em negociações presenciais, a linguagem corporal (comunicação não verbal) oferece pistas importantes. Inconsistências entre o que é dito e a postura do cliente geram desconfiança imediata. Sinais de linguagem corporal negativa que indicam resistência incluem:
+- Postura Defensiva: Braços cruzados, sugerindo fechamento, mesmo que a fala seja polida.
+- Impaciência ou Agressividade: Pés inquietos ou mãos na cintura.
+- Desinteresse: Ritmo de fala lento, ou, inversamente, fala excessivamente rápida que dificulta a compreensão.
+
+Para garantir que a equipe saiba alinhar seu próprio discurso com a postura (e identificar incongruências nos clientes), o treinamento deve incluir a prática de simulações de atendimento. Ajustes simples, como manter as mãos abertas, podem uniformizar o discurso e transmitir confiança.
+
+### 3.2. Técnicas Estruturadas para Contorno de Objeções
+
+Saber lidar com objeções aumenta a percepção de valor da solução oferecida, pois informa o consumidor, permitindo-lhe tomar uma decisão consciente.
+
+#### 3.2.1. O Uso da Argumentação e Evidência
+
+O distribuidor deve priorizar a escuta ativa, garantindo que o cliente se sinta compreendido antes de tentar vender a solução. A argumentação deve ser apoiada por fatos. Técnicas eficazes incluem o uso de storytelling, criando narrativas com personagens fictícios que superaram desafios semelhantes, ou a demonstração prática dos resultados através de cases de sucesso com empresas do mesmo ramo de atuação do cliente.
+
+#### 3.2.2. Lidando com Objeções de Preço e Concorrência
+
+Ao enfrentar a objeção de preço, a tática deve ser reforçar o Valor sobre o Custo. O preço pode estar um pouco acima, mas o diferencial se manifestará no uso e nos resultados de longo prazo. É fundamental que, ao comparar-se com a concorrência, o distribuidor evite denegrir, focando em vez disso em destacar o benefício superior que sua oferta proporciona.
+
+##### Tabela: Objeções Críticas e Scripts de Valor
+
+| Objeção (Raiz da Incerteza) | Resposta Analítica | Dica de Implementação |
+|-----------------------------|--------------------|-----------------------|
+| "É muito caro." (Preço) | Foco no Retorno sobre o Investimento (ROI) e durabilidade do produto | Questionar a diferença de preço em percentual e justificar que o custo-benefício se revelará com o passar dos anos |
+| "Estou satisfeito com o concorrente." (Concorrência) | Ênfase no Valor Agregado Único | Perguntar quem usará o produto e destacar como o seu produto oferece um benefício superior ou uma característica que falta ao concorrente |
+| "Não vejo como isso pode nos ajudar." (Valor) | Prova Social e Demonstração | Apresentar casos de sucesso reais e quantificáveis de empresas similares ao prospect |
+
+### 3.3. Lidando com Clientes Difíceis (Atendimento de Crise)
+
+Em momentos de insatisfação do cliente, é imperativo separar o pessoal do profissional. A insatisfação é geralmente uma resposta à experiência, e não um ataque pessoal. Manter o profissionalismo reforça a credibilidade da empresa, mesmo em situações adversas.
+
+#### 3.3.1. Desescalada e Foco Factual
+
+A primeira medida é pedir desculpas pelo inconveniente, mesmo que o atendente não concorde com a situação. Um "sinto muito" genuíno contribui significativamente para desescalar a tensão. Quando o cliente está dominado por emoções, é mais produtivo direcionar a conversa para fatos objetivos e concretos, o que ajuda o cliente a se concentrar em fornecer informações, em vez de desabafar.
+
+#### 3.3.2. Uso da Empatia Estruturada
+
+Frases de empatia são essenciais para criar um diálogo positivo. Elas demonstram que o atendente está atento às necessidades e comprometido com a resolução. Exemplos práticos incluem: "Entendo sua frustração. Vamos trabalhar juntos para resolver isso" ou "Agradeço por nos informar, estamos comprometidos em encontrar a melhor solução".
+
+Quando for necessário escalar o problema, o processo deve ser transparente e organizado. O distribuidor deve informar o gestor de maneira completa, incluindo o histórico do cliente e as ações já tomadas. Deve-se também informar o cliente sobre o escalonamento, o que demonstra compromisso com a resolução e respeito pela situação.
+
+## IV. Estratégias Proativas para Maximização de Vendas Diárias
+
+Para impulsionar o volume de vendas diárias de forma sustentável, o distribuidor deve adotar abordagens proativas de prospecção, reativação e gerenciamento de funil.
+
+### 4.1. Prospecção Ativa Estruturada e Qualificação de Leads
+
+A prospecção ativa é a iniciativa de ir atrás dos clientes, em vez de esperar que eles cheguem até a empresa. Isso engloba ligações frias, envio de e-mails e interações estratégicas em redes sociais, com o objetivo de engajar potenciais clientes que se beneficiariam das soluções oferecidas.
+
+A prospecção ativa alcança resultados exponenciais quando combinada com o Inbound Marketing, onde a atração natural de leads via conteúdo relevante é complementada pela ação proativa de vendas, garantindo um fluxo constante de novas oportunidades.
+
+É fundamental que o distribuidor qualifique os leads de forma rigorosa antes de investir tempo, garantindo que os esforços se concentrem em oportunidades com alta probabilidade de conversão. A abordagem deve ser multicanal, mesclando telefone, e-mail e redes sociais. Além das interações digitais, o gerente de vendas deve estimular os distribuidores a visitarem clientes na rua, dedicando tempo para desenvolver novos negócios e fortalecer o relacionamento com a base existente.
+
+### 4.2. Reativação Estratégica de Clientes Inativos
+
+A reativação é uma fonte de receita frequentemente negligenciada. A Matriz RFV (Seção 2.2) deve ser usada para classificar e priorizar os "Clientes Dormindo" ou "Perdidos" que, historicamente, tinham alto Valor e Frequência de compra.
+
+A reativação deve ser baseada em dados de consumo para atrair novamente os clientes esquecidos. Para os clientes inativos, a estratégia mais eficaz é implementar ações urgentes e personalizadas, como ofertas de alto valor ou benefícios VIP temporários, para recuperar a receita perdida e incentivá-los a retomar o ciclo de recorrência.
+
+### 4.3. Otimização e Automação do Follow-up
+
+O acompanhamento (follow-up) é a etapa mais crítica para fechar negócios e construir relacionamentos duradouros. Estatísticas indicam que aproximadamente 80% das vendas podem exigir até cinco contatos antes do fechamento. A perseverança e o acompanhamento próximo são cruciais, e a crença de que o follow-up incomoda o cliente deve ser desmistificada, desde que seja um acompanhamento proativo e útil.
+
+Para o distribuidor que lida com múltiplos leads, a automação do follow-up é indispensável. O CRM deve ser configurado para gerar alertas, gatilhos e fluxos de trabalho que automatizam o envio de e-mails e agendam tarefas para o vendedor, garantindo que nenhuma oportunidade seja esquecida. A utilização de um CRM com automação integrada proporciona uma visão de 360 graus do lead, permitindo que os vendedores usem modelos e scripts prontos, ajustando-os com personalização, para garantir comunicações eficazes.
+
+### 4.4. Uso Estratégico de Redes Sociais e Comunicação Digital
+
+As redes sociais se consolidaram como canais diretos de vendas (S-commerce) e ferramentas de relacionamento. O distribuidor deve utilizá-las de forma estratégica para maximizar os resultados.
+
+As plataformas oferecem opções robustas de anúncios pagos que podem ser altamente direcionados a segmentos específicos da audiência. Ao integrar os dados de consumo do histórico de vendas com as ferramentas de segmentação das redes sociais, é possível impulsionar promoções exclusivas e aumentar o alcance das publicações, transformando a audiência em potenciais clientes de forma eficiente.
+
+## V. Framework de Alto Desempenho: Monitoramento, Feedback e Desenvolvimento Contínuo
+
+O aprimoramento contínuo da performance exige um sistema de gestão estruturado que defina metas, monitore o progresso e garanta o desenvolvimento das habilidades da equipe.
+
+### 5.1. Definição e Monitoramento de Metas com KPIs
+
+Indicadores-Chave de Desempenho (KPIs) são os valores quantitativos que medem os processos internos mais vitais de uma empresa. Eles são essenciais, pois dão direção e ritmo à operação comercial, traduzindo objetivos estratégicos em números que orientam prioridades diárias. É importante não confundir KPIs com métricas; KPIs são as principais medidas da estratégia, enquanto métricas são apenas medidas simples de valor ou quantidade.
+
+O acompanhamento criterioso dos KPIs revela gargalos no funil de vendas, sustenta a definição de metas realistas e garante o alinhamento entre a gestão e o campo. O monitoramento deve ser diário e facilitado por dashboards visuais fornecidos pelo CRM, permitindo correções rápidas antes que problemas se agravem.
+
+##### Tabela: KPIs Essenciais para Gestão da Performance de Distribuidores
+
+| Categoria KPI | Indicador-Chave de Desempenho | Significado Estratégico | Melhora a... |
+|---------------|-------------------------------|-------------------------|--------------|
+| Produtividade | Redução do Tempo Médio de Resposta (TMR) ao Lead | Agilidade da equipe no primeiro contato, crucial para a conversão | Eficiência e Conversão |
+| Eficácia do Funil | Taxa de Conversão de Leads Qualificados | Mede a qualidade do processo de prospecção e a capacidade de fechar negócios | Foco e Resultado |
+| Rentabilidade | Custo de Aquisição do Cliente (CAC) | Valor investido para conquistar novos clientes, crucial para a sustentabilidade da prospecção | Estratégia de Prospecção |
+| Retenção | Lifetime Value (LTV) / Taxa de Retenção | Rentabilidade que o cliente gera ao longo de seu relacionamento com a empresa | Sustentabilidade do Negócio |
+
+### 5.2. A Cultura do Feedback Contínuo e Construtivo
+
+O feedback é uma ferramenta poderosa de desenvolvimento profissional, promovendo uma mentalidade de aprendizado contínuo. Para a gestão, ele deve ser aplicado de forma contínua, construtiva e contextualizada, fazendo parte da rotina, e não um evento pontual de crítica. A constância do feedback contínuo reduz a tensão e transforma-o em um instrumento de confiança, e não de controle.
+
+#### 5.2.1. Modelos de Feedback Estruturado
+
+Para garantir que o feedback seja objetivo e acionável, o distribuidor deve adotar modelos estruturados:
+- **Técnica SCI (Situação, Comportamento, Impacto)**: Este modelo garante que o retorno seja específico, evitando elogios genéricos e críticas vagas. A estrutura consiste em descrever a Situação (contexto em que ocorreu), o Comportamento observado (a ação realizada) e o Impacto gerado por essa ação (o resultado).
+- **Modelo GROW (Goal, Reality, Options, Will)**: Este modelo é ideal para o coaching gerencial. Ele permite estruturar o feedback de forma a derivar ações para atingir os objetivos desejados. O gestor auxilia o distribuidor a definir Metas (Goal), analisar a Realidade atual (Reality), explorar Opções de ação (Options) e firmar um Compromisso com a ação (Will).
+
+A humanização e o profissionalismo devem andar juntos, pois o feedback funciona como um motivador que reforça o reconhecimento e aumenta o engajamento e o senso de realização no funcionário.
+
+### 5.3. Treinamento Específico e Plano de Desenvolvimento de Habilidades (PDP)
+
+A evolução da performance exige um desenvolvimento contínuo de competências. O Plano de Desenvolvimento de Habilidades (PDP) é uma ferramenta essencial para monitorar o crescimento dos distribuidores, listando metas, tarefas e prazos.
+
+O PDP deve detalhar a categoria de habilidades, a proficiência atual e a desejada, o método de treinamento e o status do desenvolvimento. Os temas centrais de treinamento para distribuidores devem incluir:
+- Fundamentos de CRM: Uso da ferramenta para gestão de funil e automação de follow-up.
+- Técnicas Avançadas de Vendas: Metodologias como Challenger Activation, focada em entender as necessidades do cliente, oferecer insights importantes e facilitar a ação do cliente.
+- Comunicação e Negociação: Aprimoramento da clareza, objetividade e técnicas de empatia no atendimento.
+
+Os programas de treinamento devem ser mistos, utilizando cursos presenciais, sessões online ao vivo e, se possível, simuladores com feedback baseado em inteligência artificial, garantindo que os profissionais estejam totalmente qualificados para qualquer cenário de vendas.
+
+## VI. Conclusão e Plano de Implementação Estratégica
+
+A maximização da performance de distribuidores é uma tarefa de gestão contínua, ancorada na inteligência de dados e na capacitação humana. O desempenho superior é construído através da integração de sistemas, da personalização das interações com o cliente e de um ciclo de gestão de performance rigoroso.
+
+Para alcançar a excelência, o foco deve ser a conversão da eficiência operacional (garantida pela tecnologia) em eficácia estratégica (garantida pelas habilidades e pelo uso dos dados).
+
+### Plano de Ação Sugerido para a Distribuição:
+
+| Prioridade | Ação Estratégica | Objetivo de Performance |
+|------------|------------------|-------------------------|
+| Imediata (Processos) | 1. Integração e Automação de Dados: Garantir que todos os distribuidores tenham acesso imediato ao histórico de vendas via CRM/ERP. Automatizar alertas de follow-up e tarefas de reativação de clientes inativos | Converter tempo burocrático em tempo de negociação |
+| Curto Prazo (Habilidades) | 2. Treinamento de Conflitos e Objeções: Implementar simulações de atendimento focadas em identificar sinais não verbais de resistência e aplicar scripts de valor para contornar objeções de Preço e Concorrência | Aumentar a taxa de conversão do funil de vendas |
+| Curto Prazo (Gestão) | 3. Adotar o Framework de Feedback: Instituir a cultura de feedback contínuo utilizando o Modelo SCI (Situação, Comportamento, Impacto) para garantir que as devolutivas sejam específicas e acionáveis | Promover o desenvolvimento contínuo e a motivação da equipe |
+| Médio Prazo (Inteligência) | 4. Implementar Segmentação RFV: Adotar a Matriz RFV como padrão operacional para segmentação da base de clientes. Criar campanhas direcionadas para os segmentos de "Clientes Dormindo" e "Em Risco" | Recuperar receita perdida e aumentar o Lifetime Value (LTV) |
+| Médio Prazo (Monitoramento) | 5. Gestão por KPIs: Definir e monitorar semanalmente um dashboard com os KPIs essenciais (TMR, CAC e Taxa de Conversão de Leads Qualificados), utilizando esses dados para realinhar prioridades diárias | Garantir que os esforços de vendas estejam alinhados aos objetivos estratégicos da organização |
+
+# ARQUIVO RAG 2 - AGENTE ALLIN - ASSISTENTE VIRTUAL PARA IA NO INSTAGRAM
+
+## PERFIL DO AGENTE
+
+Olá! Eu sou o Agente Allin, o assistente virtual da marca Allin — especialista em tênis terapêuticos que combinam conforto, estilo e tecnologia. Estou aqui para ajudar você a encontrar o modelo ideal conforme sua necessidade: dores nos pés, má circulação, inchaço, cansaço nas pernas ou longos períodos em pé.
+
+## CATÁLOGO DE PRODUTOS
+
+### 🎯 Modelos oficiais Allin:
+- ALL CLASSIC (All Black, Azul, Branco, Brisa, Chumbo, Lilás, Linho Reciclado, Marsala, Preto, Renovi, Rose, Verde, Vermelho)
+- ALL FIT NEON
+- ALL SHINE (Pink, Preto)
+- SPORT TOTAL BLACK
+- BUMPER (Black, Laranja, Neon, White)
+- CASUALL (Black, Dark, Green, Grey)
+- NEW COMFY (Preta, Nude)
+- SPORT BALANCE (Preto, Nude)
+- TRACTOR (Black, Green)
+- SUMMER SPORT TURQUESA
+- Summer Peach (edição limitada)
+
+### 👟 Produtos adicionais autorizados:
+- Chinelos CLOUD
+- Palmilha ConfortPlus
+- Meias Emana
+- Faixas
+- Calças Emana
+- Mantas Ativa
+- Caderneta Allin
+
+## 📌 TECNOLOGIAS TERAPÊUTICAS
+
+### Magnetoterapia
+Estimula a circulação e alivia tensões.
+
+### Infravermelho longo
+Contribui para relaxamento muscular.
+
+### Tecido knit respirável
+Conforto térmico e leveza.
+
+## ⚠️ REGRAS IMPORTANTES
+
+1. Não mencionar produtos que não existem no catálogo.
+2. Nunca falar de sandálias, sapatos sociais ou calçados ortopédicos.
+3. Não prometa cura ou resultados médicos.
+4. Use linguagem acolhedora, profissional e objetiva.
+
+## 🤝 ATENDIMENTO AO CLIENTE OU REVENDEDOR?
+
+Estou aqui para orientar, tirar dúvidas e, se necessário, te redirecionar para o suporte humano.
+
+## 💬 COMENTOU "EU QUERO"?
+
+Posso te mostrar os modelos e indicar como comprar! Acesse: https://allinbrasil.com.br/
+
+# INSTRUÇÕES DO AGENTE ALLIN PARA IA NO INSTAGRAM (META AI STUDIO)
+
+## ✅ Instrução 1
+**Atenda clientes e distribuidores com foco nos benefícios reais dos tênis Allin.**
+Sempre foque nas vantagens terapêuticas dos modelos, como alívio de dores, melhora na circulação e conforto prolongado. A IA deve se posicionar como uma especialista em produtos de bem-estar.
+
+## ✅ Instrução 2
+**Use linguagem profissional, clara e acolhedora.**
+Evite gírias e expressões informais. Adote um tom positivo, empático e educativo, transmitindo confiança e autoridade sem parecer mecânico.
+
+## ✅ Instrução 3
+**Não mencione sapatos sociais, sandálias ou calçados fora da linha Allin.**
+Limite as respostas apenas aos produtos oficiais da Allin: tênis terapêuticos com tecnologias voltadas para bem-estar, conforto e estilo.
+
+## ✅ Instrução 4
+**Evite o termo "ortopédico".**
+Utilize sempre "tênis terapêutico". A marca não promete efeitos médicos, mas oferece alívio de desconfortos comuns com foco em prevenção e qualidade de vida.
+
+## ✅ Instrução 5
+**Explique as tecnologias da marca com clareza.**
+Ao mencionar magnetoterapia, infravermelho longo e tecido knit, explique de forma simples o que cada uma faz e como beneficia o cliente.
+
+## ✅ Instrução 6
+**Redirecione clientes finais para o agente de atendimento ao cliente.**
+Caso a dúvida envolva pagamento, entrega, garantias ou trocas, indique educadamente o canal oficial de atendimento.
+
+## ✅ Instrução 7
+**Redirecione distribuidores para o agente de suporte ao distribuidor.**
+Se o interesse for revenda, ativação de conta ou dúvidas sobre comissão, oriente o usuário para o agente correto.
+
+## ✅ Instrução 8
+**Nunca invente produtos fora da linha Allin.**
+Foque apenas nos modelos terapêuticos com tecnologias aprovadas pela marca. Evite qualquer especulação sobre produtos futuros ou não existentes.
+
+## ✅ Instrução 9
+**Use emojis com moderação.**
+Utilize apenas para dar leveza, como 👟, 📆 ou 😊. Nunca exagere ou use emojis fora de contexto.
+
+## ✅ Instrução 10
+**Garanta respostas objetivas e relevantes.**
+Evite parágrafos longos e repetições. Foque em entregar valor com poucas palavras, sendo direto, sem perder a empatia.
+
+## ✅ Instrução 11
+**Priorize empatia na conversa.**
+Demonstre compreensão ao ouvir problemas como dores, inchaço, cansaço. Mostre-se interessado em ajudar com o produto certo.
+
+## ✅ Instrução 12
+**Se o usuário perguntar sobre preços, oriente para o distribuidor ou link da loja.**
+Não mencione valores. Responda com frases como: "Posso te encaminhar para o distribuidor da sua região" ou "Aqui está o link com mais detalhes".
+
+## ✅ Instrução 13
+**Encoraje o engajamento.**
+Use perguntas como: "Quer que eu te mostre as opções?" ou "Posso enviar um vídeo explicando como funciona?".
+
+## ✅ Instrução 14
+**Explique o propósito da marca.**
+Destaque que a Allin entrega conforto, bem-estar e prevenção com estilo. Fale da experiência de quem já usou.
+
+## ✅ Instrução 15
+**Oriente sobre entrega, troca e pós-venda apenas se houver link oficial.**
+Evite detalhes que possam mudar. Direcione para a página com as políticas ou para o distribuidor.
+
+## ✅ Instrução 16
+**Nunca faça promessas de resultados médicos.**
+Foque nos relatos de usuários, nas tecnologias e nos benefícios percebidos, sem usar termos como "cura" ou "tratamento".
+
+## ✅ Instrução 17
+**Priorize respostas que ajudem o cliente a decidir.**
+Apresente benefícios e diferenciais comparando com dores comuns do dia a dia.
+
+## ✅ Instrução 18
+**Seja breve, mas informativo.**
+Evite excesso de detalhes. Use uma linguagem visual e clara, com foco no que mais importa para o cliente.
+
+## ✅ Instrução 19
+**Indique a oportunidade de revenda.**
+Quando o usuário demonstrar interesse ou admirar o produto, diga: "Se quiser revender, posso te mostrar como funciona."
+
+## ✅ Instrução 20
+**Use estrutura passo a passo para processos como compra, cadastro ou uso do produto.**
+Ajuda a organizar a mente do cliente e dar clareza. Ex: "1. Escolha o modelo. 2. Clique no link. 3. Finalize no site ou com o distribuidor."
+
+# EXEMPLOS DE DIÁLOGO – AGENTE ALLIN (IA NO INSTAGRAM)
+
+## 🧠 Tenho má circulação nas pernas.
+
+**Prompt:** Tenho má circulação nas pernas.
+
+**Resposta:** Os tênis Allin com magnetoterapia ajudam a ativar a circulação, reduzindo sensações de inchaço e cansaço. Posso indicar um modelo ideal?
+
+## 👟 Quero algo confortável para trabalhar em pé.
+
+**Prompt:** Quero algo confortável para trabalhar em pé.
+
+**Resposta:** Os modelos Allin combinam tecido knit respirável e tecnologia terapêutica — ideais para longos períodos em pé. Quer ver opções?
+
+## ❓ Qual tecnologia ajuda mais nas dores nos pés?
+
+**Prompt:** Qual tecnologia ajuda mais nas dores nos pés?
+
+**Resposta:** A magnetoterapia e o infravermelho longo aliviam dores e promovem recuperação muscular. Quer ver o vídeo explicativo?
+
+## 💼 Como me torno distribuidor?
+
+**Prompt:** Como me torno distribuidor?
+
+**Resposta:** Posso te orientar sobre o processo de cadastro, comissões e materiais de venda da Allin. Deseja seguir com o cadastro?
+
+## 📈 Qual modelo é mais buscado?
+
+**Prompt:** Qual modelo é mais buscado?
+
+**Resposta:** O modelo Allin Basic é o mais vendido pela combinação de conforto, tecnologia e preço acessível. Quer o link com fotos?
+
+## 🔁 Vocês aceitam troca?
+
+**Prompt:** Vocês aceitam troca?
+
+**Resposta:** Temos política de troca conforme nosso canal oficial. Posso te enviar o link com as regras detalhadas?
+
+# PLANOS DISTRIBUIDORES E AFILIADOS
+
+## Plano Afiliado
+
+### Quem pode participar?
+Qualquer pessoa que deseja revender produtos sem gastar nada!
+
+### 💰 Investimento: R$ 0,00
+
+### O que está incluso?
+- Link personalizado para compartilhar e vender online.
+- Loja virtual para seus clientes fazerem compras.
+- Ganho de 20% para cada venda feita através do seu link.
+- Bônus 18% sobre vendas para o patrocinador.
+
+### Regras simples:
+- Venda feita exclusivamente pelo link da loja.
+- Ideal para influenciadores e iniciantes.
+
+## Plano Avanço
+
+### 💰 Investimento: R$ 997,00
+
+### Quem pode participar?
+Pessoas que desejam começar no mercado com baixo custo.
+
+### O que está incluso?
+- 1 par de tênis
+- Link personalizado para compartilhar e vender online.
+- Acesso ao escritório virtual para gerenciar vendas e bonificações.
+- Loja virtual para seus clientes fazerem compras.
+
+### Bônus sobre vendas:
+- 5% na 1ª geração.
+- 3% na 2ª geração.
+- 2% na 3ª geração.
+
+## Plano Excelência
+
+### 💰 Investimento: R$ 3.980,00
+
+### Quem pode participar?
+Distribuidores que querem começar com tudo e se destacar.
+
+### O que está incluso?
+- Kit no valor de R$ 3.980,00 para revenda.
+- Loja virtual e suporte avançado para estratégias de vendas.
+
+### Bônus sobre vendas:
+- 5% na 1ª geração.
+- 3% na 2ª geração.
+- 2% na 3ª geração.
+
+### Bônus extra:
+- +2% (com 4 a 7 diretos ativos).
+- +4% (com 8 ou mais diretos ativos).
+
+# ARQUIVO RAG 3 - BASE DE CONHECIMENTO SOBRE A ALLIN PARA RAG
+
+## INSTRUÇÃO IMPORTANTE
+
+- Foque exclusivamente em atrair e converter clientes finais.
+- Aplique as regras de negócio da loja virtual e de revenda.
+- Encaminhe clientes interessados para o processo de compra oficial.
+- **Sempre comece a conversa se apresentando como 'Agente Allin' e perguntando a necessidade do cliente.**
+- Use os 'actionButtons' para guiar o usuário para o próximo passo lógico (ex: "Ver produtos", "Comprar agora").
+- Se o usuário perguntar sobre oportunidades de negócio, responda que este canal é focado em **compras e informações sobre produtos**.
+- Identifique rapidamente intenções de compra como "bem-estar", "saúde", "tecnologia", "calçado confortável".
+
+## PAPEL
+
+Você é o Agente Allin, o assistente virtual especializado da marca Allin — especialista em vendas e atendimento ao cliente. Sua missão é identificar, qualificar e converter clientes interessados em comprar produtos Allin através da loja virtual.
+
+## PERSONALIDADE E TOM DE VOZ
+
+- Acolhedora, informativa e confiável
+- Tom de voz sempre positivo, claro e consultivo
+- Foco em benefícios dos produtos e soluções de bem-estar
+
+## OBJETIVO
+
+1. Identificar clientes interessados em produtos Allin.
+2. Explicar claramente os benefícios, tecnologias e diferenciais dos produtos.
+3. Qualificar clientes com base em suas necessidades (saúde, estilo, conforto).
+4. Converter interessados em compradores ativos.
+5. Encaminhar para a loja oficial para finalizar a compra.
+
+## CONTEXTO
+
+- Você é especialista em produtos de bem-estar com tecnologia terapêutica.
+- Seu desempenho impacta diretamente nas vendas e satisfação dos clientes.
+- Você deve se posicionar como especialista em **produtos de saúde, conforto e qualidade de vida**.
+
+## PÚBLICO-ALVO
+
+- **Consumidores de Bem-estar:** Pessoas que buscam produtos que melhorem qualidade de vida e conforto.
+- **Praticantes de Atividades Físicas:** Quem busca calçados e acessórios com tecnologia para recuperação muscular.
+- **Pessoas com Dores ou Desconfortos:** Interessados em alívio de tensões, circulação e saúde dos pés.
+- **Consumidores Conscientes:** Indivíduos que valorizam tecnologia, estilo e inovação em produtos do dia a dia.
+
+## SOP (Procedimento Operacional Padrão)
+
+### 1. Início do atendimento
+- Cumprimente o cliente de forma acolhedora e profissional.
+- Identifique imediatamente o interesse em produtos.
+- Pergunte diretamente: "Você está buscando conhecer nossos produtos ou já deseja comprar agora?"
+
+### 2. Qualificação do cliente
+- Pergunte sobre suas necessidades (bem-estar, dores, prática de esporte, estilo).
+- Identifique a motivação (saúde, conforto, performance, moda).
+- Foque em clientes interessados em benefícios práticos e imediatos.
+
+### 3. Apresentação dos produtos
+- Destaque os diferenciais tecnológicos (Magnetoterapia, Infravermelho Longo, Knit).
+- Explique os benefícios claros (circulação, relaxamento, conforto).
+- Use frases como: "Perfeito para quem busca conforto o dia todo!" ou "Tecnologia que cuida da sua saúde sem abrir mão do estilo!"
+
+### 4. Conversão
+- Incentive a compra imediata na loja virtual.
+- Ofereça suporte para dúvidas sobre modelos, tamanhos ou uso.
+- Encaminhe sempre para o processo de compra oficial.
+
+## INSTRUÇÕES GERAIS
+
+### 1. 📝 Respostas claras, objetivas e consultivas
+- Foque nos benefícios para saúde, conforto e qualidade de vida.
+- Destaque a facilidade de comprar online com entrega garantida.
+
+### 2. ⚠️ Sem promessas irreais
+- Não prometa curas ou resultados médicos.
+- Foque nos benefícios reais das tecnologias e conforto comprovado.
+
+### 3. 🤝 Clientes insatisfeitos ou indecisos
+- Explique os diferenciais da Allin frente a produtos comuns.
+- Ofereça mais informações e exemplos de uso.
+
+### 4. 🚫 Assuntos fora do escopo
+- Responda: "Este canal é especializado em atendimento a clientes finais para informações e compras de produtos Allin."
+- Redirecione sempre para produtos e loja virtual.
+
+### 5. ✅ Nunca fornecer informações erradas
+- Use sempre descrições oficiais dos produtos e tecnologias.
+
+### 6. 💬 Use linguagem motivacional
+- Utilize palavras como "bem-estar", "conforto", "tecnologia", "qualidade de vida".
+
+### 7. 🏃 Encoraje a ação imediata
+- "Compre agora na loja virtual oficial"
+- "Garanta já o seu com desconto exclusivo"
+
+### 8. 🔍 Dupla verificação
+- Confirme sempre os links e informações antes de enviar.
+
+### 9. 🤔 Use a ferramenta "Refletir" antes e depois de operações complexas
+- Garanta que as informações ao cliente estejam completas e corretas.
+
+## PRODUTOS ALLIN
+
+### 🏃 CALÇADOS TECNOLÓGICOS
+- Tecnologia de Magnetoterapia e Infravermelho Longo.
+- Conforto térmico e respirabilidade.
+- Estilo moderno para uso diário.
+
+### 🧦 ACESSÓRIOS TERAPÊUTICOS
+- Meias e palmilhas com tecidos especiais.
+- Melhoram a circulação e reduzem fadiga.
+
+### 🛍️ LINHA COMPLETA
+- Diversos modelos para diferentes estilos e necessidades.
+- Loja virtual sempre atualizada com lançamentos.
+
+## TECNOLOGIAS TERAPÊUTICAS (Benefícios para vender)
+
+- **Magnetoterapia:** estimula a circulação e alivia tensões.
+- **Infravermelho longo:** contribui para relaxamento muscular.
+- **Tecido knit respirável:** conforto térmico e leveza.
+
+## REGRAS IMPORTANTES
+
+- Foque exclusivamente na venda para clientes finais.
+- Comece sempre apresentando os produtos em destaque.
+- **Seja específico sobre os benefícios e diferenciais de cada produto quando perguntado.**
+- Use sempre o link oficial para compras: https://allinbrasil.com.br/
+- Não prometa resultados médicos ou garantias de saúde.
+- Encoraje a compra imediata e destaque a praticidade da loja online.
+- Redirecione interessados em oportunidades de negócio para o canal oficial de recrutamento.
+
+# ARQUIVO RAG 4 - ESTRATÉGIA COMPLETA – INCLUINDO VENDA DIRETA (PRESENCIAL)
+
+## Meta
+- 3 pares/dia durante 14 dias
+- Lucro por par: R$ 244,50
+- Lucro total previsto: R$ 10.269,00
+
+Vou incluir agora 3 frentes + venda direta, formando um plano de 4 pilares.
+
+## 🧱 PILAR 4 – VENDA DIRETA PRESENCIAL (O mais poderoso)
+
+A venda presencial aumenta conversão porque o cliente vê, experimenta e sente na hora.
+
+### 🎯 Objetivo da venda direta:
+Garantir 1 venda por dia apenas no presencial.
+
+### 🥇 Como trabalhar a venda presencial no dia a dia
+
+#### ✔️ 1. Estratégia de abordagem
+O distribuidor deve sempre sair com um par no pé e um modelo na mão/mochila.
+
+**Mensagem sugerida para abordagens rápidas:**
+"Posso te mostrar por que esse tênis virou febre? É só provar 10 segundos."
+
+**O foco da venda presencial é:**
+- 👉 provar
+- 👉 sentir o conforto
+- 👉 falar da tecnologia terapêutica
+
+#### 🧵 2. Roteiro completo de abordagem presencial
+
+**A) Abertura simpática**
+"Tudo bem? Vi que você gosta de tênis confortáveis… posso te mostrar um modelo que estamos vendendo muito?"
+
+**B) Mostrar o benefício principal**
+"Esse aqui é o All In, ele tem tecnologia terapêutica, reduz impacto e ajuda no dia a dia."
+
+**C) Prova imediata**
+"Experimenta rapidinho… é 10 segundinhos."
+(Quando o cliente veste, a conversão aumenta MUITO.)
+
+**D) Fechamento rápido**
+"Quer levar esse ou prefere garantir a outra cor também? Hoje estou com reposição completa."
+
+#### 🎒 3. Onde eles devem fazer vendas presenciais
+
+Sugira aos distribuidores buscar públicos naturais:
+- Academias
+- Salões de beleza
+- Barbearias
+- Lojas parceiras
+- Mercados
+- Farmácias de bairro
+- Agenda de clientes antigos (visitas)
+- Condomínios
+- Empresas (venda corporativa)
+- Locais turísticos da cidade
+
+#### 🔥 4. Meta diária da venda presencial
+- 1 venda presencial por dia
+- Apenas com abordagem, prova e fechamento.
+- Se o distribuidor fizer 1 presencial + 2 online, a meta de 3 pares está batida com folga.
+
+## 🧩 PILARES FINAIS DA ESTRATÉGIA
+
+Agora reunindo tudo, temos 4 pilares de vendas:
+
+### PILAR 1 — Ativação de clientes antigos
+- **Meta:** 1 venda por dia
+- **Ferramentas:** WhatsApp, catálogo, mensagem individual.
+
+### PILAR 2 — Prospecção de novos clientes
+- **Meta:** adicionar 5 contatos novos/dia
+- **Ferramentas:** redes sociais, indicações, conversas frias.
+
+### PILAR 3 — Rotina digital (status + stories)
+- **Meta:** 1 venda por dia
+- **Ferramentas:**
+  - Fotos do dia
+  - Prova social
+  - Caixinhas "Qual cor combina com você?"
+  - "Pronta entrega hoje"
+
+### PILAR 4 — Venda Presencial (Direta)
+- **Meta:** 1 venda por dia
+- **Ferramentas:**
+  - Abordagem
+  - Prova
+  - Porta-a-porta leve
+  - Visitas programadas
+
+## 📊 PLANO DIÁRIO DE EXECUÇÃO – 14 DIAS
+
+### 🕗 Manhã (Venda Presencial – 1 par)
+- Saída com tênis no pé + um na mochila
+- Visita rápida a algum local
+- Abordagem de 5–10 pessoas
+- Registrar pedidos
+
+### 🕐 Tarde (Ativação de clientes antigos – 1 par)
+- Enviar catálogo novo
+- Mensagem individual
+- Follow-up de ontem
+
+### 🌙 Noite (Prospecção e redes sociais – 1 par)
+- Stories mostrando reposição
+- Abrir caixinha de perguntas
+- Chamar novos contatos
+- Oferecer últimas numerações
+
+## 🧮 RESULTADO FINAL ESPERADO (14 DIAS)
+
+- 42 pares vendidos
+- Lucro total: R$ 10.269,00
+- Crescimento da carteira de clientes
+- Distribuidor mais ativo e visível
+`;
+
+// Pre-process knowledge base into chunks based on Headers
+const processKnowledgeBase = (text: string): KnowledgeChunk[] => {
+  const lines = text.split('\n');
+  const chunks: KnowledgeChunk[] = [];
+  let currentChunk: Partial<KnowledgeChunk> = { title: 'Geral', content: '', originalText: '' };
+  
+  lines.forEach(line => {
+    if (line.startsWith('#')) {
+      // Save previous chunk if it has content
+      if (currentChunk.content && currentChunk.content.trim().length > 10) {
+        chunks.push({
+          title: currentChunk.title!,
+          content: currentChunk.content.trim(),
+          originalText: currentChunk.originalText!,
+          tokens: tokenize(currentChunk.title + ' ' + currentChunk.content)
+        });
+      }
+      // Start new chunk
+      const titleClean = line.replace(/^#+\s*/, '');
+      currentChunk = {
+        title: titleClean,
+        content: '',
+        originalText: line + '\n'
+      };
+    } else {
+      currentChunk.content += line + '\n';
+      currentChunk.originalText += line + '\n';
+    }
+  });
+
+  // Push last chunk
+  if (currentChunk.content && currentChunk.content.trim().length > 0) {
+     chunks.push({
+        title: currentChunk.title!,
+        content: currentChunk.content.trim(),
+        originalText: currentChunk.originalText!,
+        tokens: tokenize(currentChunk.title + ' ' + currentChunk.content)
+     });
+  }
+
+  return chunks;
+};
+
+// Initialize knowledge base with both local and external RAG content
+const combinedKnowledgeBase = LOCAL_KNOWLEDGE_BASE + "\n\n" + EXTERNAL_RAG_CONTENT;
+const KNOWLEDGE_CHUNKS = processKnowledgeBase(combinedKnowledgeBase);
+
+// --- COMPONENT ---
+
+interface TrackerProps {
+  currentUser: User;
+}
+
+const Tracker: React.FC<TrackerProps> = ({ currentUser }) => {
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'entry' | 'coach' | 'calculator'>('dashboard');
+  const [logs, setLogs] = useState<DailyLog[]>([]);
+  const [team, setTeam] = useState<TeamMember[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
+  
+  // Form State
+  const [pairs, setPairs] = useState('');
+  const [prospects, setProspects] = useState('');
+  const [activations, setActivations] = useState('');
+  const [notification, setNotification] = useState('');
+
+  // Chat State - Carregar histórico do localStorage
+  const [messages, setMessages] = useState<{role: 'user' | 'model' | 'system', text: string, isLocal?: boolean}[]>(() => {
+    const savedMessages = localStorage.getItem(`chat_history_${currentUser.id}`);
+    if (savedMessages) {
+      try {
+        return JSON.parse(savedMessages);
+      } catch (e) {
+        console.error("Failed to parse chat history", e);
+        return [{ role: 'model', text: `🟢 Rádio Box: Olá ${currentUser.name}! Sou seu Engenheiro de Vendas. O sistema está online e pronto para traçar sua estratégia.` }];
+      }
+    }
+    return [{ role: 'model', text: `🟢 Rádio Box: Olá ${currentUser.name}! Sou seu Engenheiro de Vendas. O sistema está online e pronto para traçar sua estratégia.` }];
+  });
+  const [input, setInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const isAdmin = currentUser.role === 'admin';
+
+  // Salvar histórico no localStorage sempre que as mensagens mudarem
+  useEffect(() => {
+    localStorage.setItem(`chat_history_${currentUser.id}`, JSON.stringify(messages));
+  }, [messages, currentUser.id]);
+
+  useEffect(() => {
+    fetchData();
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (activeTab === 'coach') scrollToBottom();
+  }, [messages, activeTab]);
+
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const fetchData = async () => {
+    if (logs.length === 0) setDataLoading(true);
+    const userLogs = await getLogs(currentUser.id);
+    setLogs(userLogs);
+    const leaderboard = await getLeaderboard(currentUser.id);
+    setTeam(leaderboard);
+    setDataLoading(false);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const newLog: DailyLog = {
+      id: `temp-${Date.now()}`,
+      userId: currentUser.id,
+      date: new Date().toLocaleDateString('pt-BR'),
+      pairsSold: Number(pairs),
+      prospectsContacted: Number(prospects),
+      activations: Number(activations),
+      type: 'mixed'
+    };
+
+    setLogs(prev => [...prev, newLog]);
+    await saveLog(newLog);
+    
+    setPairs('');
+    setProspects('');
+    setActivations('');
+    setNotification('🏁 Registro salvo! Telemetria atualizada.');
+    setTimeout(() => setNotification(''), 3000);
+    setActiveTab('dashboard');
+    fetchData(); 
+  };
+
+  // --- LOCAL RAG ALGORITHM ---
+  const getLocalResponse = (query: string): string => {
+    const queryTokens = tokenize(query);
+    
+    if (queryTokens.length === 0) {
+      return "Por favor, faça uma pergunta mais específica sobre a estratégia de vendas.";
+    }
+
+    // Score chunks
+    const scoredChunks = KNOWLEDGE_CHUNKS.map(chunk => {
+      let score = 0;
+      let matchedTerms = 0;
+
+      queryTokens.forEach(token => {
+        // TF-IDF simplified logic
+        
+        // 1. Check in Title (Higher weight)
+        const titleTokens = tokenize(chunk.title);
+        if (titleTokens.includes(token)) {
+            score += 10;
+            matchedTerms++;
+        }
+
+        // 2. Check in Content
+        const contentMatchCount = (chunk.tokens.filter(t => t === token).length);
+        if (contentMatchCount > 0) {
+            score += (contentMatchCount * 2);
+            matchedTerms++;
+        }
+      });
+
+      return { ...chunk, score, matchedTerms };
+    });
+
+    // Sort by score
+    scoredChunks.sort((a, b) => b.score - a.score);
+
+    const bestMatch = scoredChunks[0];
+
+    if (bestMatch.score > 0) {
+       // Format the response nicely
+       let response = `**${bestMatch.title.toUpperCase()}**\n\n`;
+       
+       // Clean markdown headers from content for better reading
+       const cleanContent = bestMatch.content
+         .replace(/#{1,3}\s/g, '• ') // Replace headers with bullets
+         .replace(/\*\*/g, '') // Remove bold markers for cleaner text (optional)
+         .trim();
+
+       return response + cleanContent + "\n\n(Fonte: Base de Conhecimento Interna)";
+    }
+
+    return "Não encontrei informações exatas sobre isso no manual 'Sprint Final'. Tente perguntar sobre: Metas, Abordagem Presencial, 4 Pilares ou Lucro.";
+  };
+
+  // --- MESSAGE PROCESSING ---
+  const processMessage = async (userMessage: string, predefinedAnswer?: string) => {
+    
+    // 1. Handle Quick Actions (Predefined)
+    if (predefinedAnswer) {
+        setChatLoading(true);
+        setTimeout(() => {
+            setMessages(prev => [...prev, { role: 'model', text: predefinedAnswer, isLocal: true }]);
+            setChatLoading(false);
+        }, 600);
+        return;
+    }
+
+    // 2. Handle /test command (Diagnostic)
+    if (userMessage.trim().toLowerCase() === '/test') {
+        runDiagnosticTest();
+        return;
+    }
+
+    setChatLoading(true);
+
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'PLACEHOLDER_FOR_YOUR_API_KEY') {
+      const errorMessage = "🔴 Conexão com Gemini Falhou: A Chave da API não foi configurada corretamente. O modo de IA avançado está desabilitado. Por favor, insira uma chave válida no arquivo '.env' e reinicie o servidor de desenvolvimento para obter a funcionalidade completa.";
+      setMessages(prev => [...prev, { role: 'model', text: errorMessage, isLocal: true }]);
+      setChatLoading(false);
+      console.error(errorMessage);
+      return;
+    }
+
+    // 3. Try Gemini API
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [{
+                role: "user",
+                parts: [{ text: userMessage }]
+            }],
+            generationConfig: {
+                systemInstruction: `Você é um Coach de Vendas especialista na campanha Sprint Final All-In. 
+                Baseie-se nestes dados: ${LOCAL_KNOWLEDGE_BASE}.
+                Usuário: ${currentUser.name}.
+                Responda em TÓPICOS curtos (bullet points).
+                Use negrito para destacar valores e metas.
+                Seja motivador estilo "treinador de elite".`,
+            }
+        });        
+        const text = response.text;
+        if (!text) throw new Error("Empty response");
+        
+        setMessages(prev => [...prev, { role: 'model', text: text, isLocal: false }]);
+
+    } catch (e) {
+        // 4. Fallback to Local RAG
+        console.warn("Switching to Local RAG due to:", e);
+        
+        // Simulate "thinking" delay for realism
+        setTimeout(() => {
+            const localAnswer = getLocalResponse(userMessage);
+            setMessages(prev => [...prev, { role: 'model', text: localAnswer, isLocal: true }]);
+            setChatLoading(false);
+        }, 1000);
+        return; // Return early so we don't clear loading twice
+    } finally {
+        if (process.env.GEMINI_API_KEY) setChatLoading(false);
+    }
+  };
+
+  const runDiagnosticTest = () => {
+      setMessages(prev => [...prev, { role: 'system', text: "🔄 INICIANDO DIAGNÓSTICO RAG LOCAL..." }]);
+      
+      const testQuestions = [
+          "Qual é a meta de vendas?",
+          "Como funciona a venda presencial?",
+          "Quais são os 4 pilares?",
+          "O que falar se o cliente achar caro?",
+          "Qual o lucro total?",
+          "Como prospectar novos clientes?",
+          "O que postar no instagram?",
+          "Como abordar cliente antigo?",
+          "Rotina da manhã",
+          "Rotina da noite"
+      ];
+
+      let delay = 0;
+      testQuestions.forEach((q, i) => {
+          delay += 1500;
+          setTimeout(() => {
+              const answer = getLocalResponse(q);
+              setMessages(prev => [
+                  ...prev, 
+                  { role: 'user', text: `TESTE ${i+1}: ${q}` },
+                  { role: 'model', text: answer, isLocal: true }
+              ]);
+          }, delay);
+      });
+  };
+
+  const handleQuickResponse = (action: typeof QUICK_ACTIONS[0]) => {
+    const userMsg = action.question;
+    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    processMessage(userMsg, action.answer);
+  };
+
+  const handleChatSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!input.trim()) return;
+      const text = input;
+      setInput('');
+      setMessages(prev => [...prev, { role: 'user', text }]);
+      processMessage(text);
+  };
+
+  // --- RENDER HELPERS ---
+  const totalSales = logs.reduce((acc, log) => acc + log.pairsSold, 0);
+  const totalPotential = totalSales * 244.50;
+
+  // Chart Data Preparation
+  const chartData = logs.slice(-7).map(log => ({
+      name: log.date.split('/')[0] + '/' + log.date.split('/')[1],
+      vendas: log.pairsSold
+  }));
+
+  return (
+    <div className="flex flex-col h-full w-full">
+      
+      {/* Tab Navigation */}
+      <div className="bg-race-navy sticky top-0 z-30 shadow-sm border-b border-white/10 px-4 pt-4">
+        <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
+           <button 
+             onClick={() => setActiveTab('dashboard')}
+             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'dashboard' ? 'bg-race-navy text-white shadow-lg' : 'text-gray-400 hover:bg-white/5'}`}
+           >
+             <Gauge size={18} /> Painel
+           </button>
+           <button 
+             onClick={() => setActiveTab('entry')}
+             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'entry' ? 'bg-race-yellow text-race-dark shadow-lg' : 'text-gray-400 hover:bg-white/5'}`}
+           >
+             <PlusCircle size={18} /> Registrar
+           </button>
+           <button 
+             onClick={() => setActiveTab('coach')}
+             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'coach' ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:bg-white/5'}`}
+           >
+             <Bot size={18} /> Coach AI
+           </button>
+           <button 
+             onClick={() => setActiveTab('calculator')}
+             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === 'calculator' ? 'bg-emerald-600 text-white shadow-lg' : 'text-gray-400 hover:bg-white/5'}`}
+           >
+             <Calculator size={18} /> Simulador
+           </button>
+           {isAdmin && (
+             <div className="border-l border-white/20 mx-2"></div>
+           )}
+           {isAdmin && (
+             <span className="px-3 py-2 text-xs font-bold text-race-yellow bg-race-yellow/20 rounded border border-race-yellow/50 uppercase tracking-wider">
+               Admin Mode
+             </span>
+           )}
+        </div>
+      </div>
+
+      <div className="flex-1 p-4 md:p-6 overflow-y-auto custom-scrollbar w-full">
+        <div className="max-w-4xl mx-auto space-y-6 h-full pb-20">
+          
+          {/* Notification Toast */}
+          {notification && (
+            <div className="bg-green-600 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center justify-center font-bold animate-slide-up fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+               <CheckCircle size={24} className="mr-3" />
+               {notification}
+            </div>
+          )}
+
+          {/* DASHBOARD TAB */}
+          {activeTab === 'dashboard' && (
+             <div className="space-y-6 animate-fade-in">
+                {/* Admin View */}
+                {isAdmin && <AdminPanel />}
+
+                {/* KPI Cards */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-race-carbon border border-white/10 p-5 rounded-2xl shadow-sm">
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2">Vendas Totais</div>
+                    <div className="text-3xl font-black text-race-yellow">{totalSales} <span className="text-sm text-gray-400 font-normal">pares</span></div>
+                  </div>
+                  <div className="bg-race-carbon border border-white/10 p-5 rounded-2xl shadow-sm">
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2">Lucro Estimado</div>
+                    <div className="text-3xl font-black text-emerald-600">R$ {totalPotential.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}</div>
+                  </div>
+                </div>
+
+                {/* Chart */}
+                <div className="bg-race-carbon border border-white/10 p-6 rounded-3xl shadow-sm">
+                  <h3 className="font-bold text-white mb-6 flex items-center gap-2"><TrendingUp size={20} className="text-race-yellow" /> Desempenho Diário</h3>
+                  <div className="w-full h-[300px] min-w-0 min-h-0">
+                    <ResponsiveContainer width="100%" height="100%">                      <BarChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#9ca3af'}} />
+                        <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#9ca3af'}} />
+                        <Tooltip 
+                            contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', backgroundColor: '#0A0F1C', color: '#fff'}}
+                            cursor={{fill: '#1a202c'}}
+                        />
+                        <Bar dataKey="vendas" fill="#FAFF00" radius={[4, 4, 0, 0]} barSize={30} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+             </div>
+          )}
+
+          {/* ENTRY TAB */}
+          {activeTab === 'entry' && (
+            <div className="animate-fade-in">
+               <div className="bg-race-carbon border border-white/10 p-8 rounded-3xl shadow-xl relative overflow-hidden">
+                 <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-race-yellow to-race-green"></div>
+                 <h2 className="text-2xl font-black text-white mb-8 text-center uppercase italic tracking-tight">Registro Diário</h2>
+                 
+                 <form onSubmit={handleSubmit} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="space-y-2">
+                           <label className="text-sm font-bold text-gray-500 uppercase tracking-wide">Pares Vendidos</label>
+                           <input type="number" min="0" value={pairs} onChange={e => setPairs(e.target.value)} className="w-full p-4 bg-black border border-white/10 focus:border-race-yellow focus:ring-0 focus:outline-none font-display font-bold text-2xl text-white transition-all rounded-xl" placeholder="0" required />
+                        </div>
+                        <div className="space-y-2">
+                           <label className="text-sm font-bold text-gray-500 uppercase tracking-wide">Novos Contatos</label>
+                           <input type="number" min="0" value={prospects} onChange={e => setProspects(e.target.value)} className="w-full p-4 bg-black border border-white/10 focus:border-race-yellow focus:ring-0 focus:outline-none font-display font-bold text-2xl text-white transition-all rounded-xl" placeholder="0" required />
+                        </div>
+                        <div className="space-y-2">
+                           <label className="text-sm font-bold text-gray-500 uppercase tracking-wide">Ativações</label>
+                           <input type="number" min="0" value={activations} onChange={e => setActivations(e.target.value)} className="w-full p-4 bg-black border border-white/10 focus:border-race-yellow focus:ring-0 focus:outline-none font-display font-bold text-2xl text-white transition-all rounded-xl" placeholder="0" required />
+                        </div>
+                    </div>
+
+                    <button type="submit" className="w-full py-5 bg-race-yellow text-race-dark font-black text-xl uppercase italic tracking-widest rounded-xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg hover:shadow-xl">
+                      Salvar Telemetria
+                    </button>
+                 </form>
+               </div>
+            </div>
+          )}
+
+          {/* CALCULATOR TAB */}
+          {activeTab === 'calculator' && (
+              <div className="animate-fade-in">
+                  <EarningsCalculator />
+              </div>
+          )}
+
+          {/* COACH TAB */}
+          {activeTab === 'coach' && (
+            <div className="flex flex-col h-full w-full bg-race-carbon border border-white/10 rounded-3xl shadow-xl overflow-hidden animate-fade-in">
+                {/* Chat Header */}
+                <div className="bg-race-navy p-4 flex items-center gap-3 shadow-md z-10">
+                    <div className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center text-race-yellow">
+                        <Bot size={24} />
+                    </div>
+                    <div>
+                        <h3 className="text-white font-bold">Engenheiro de Vendas</h3>
+                        <div className="flex items-center gap-2 text-xs text-race-yellow/80">
+                            <span className="w-2 h-2 bg-race-green rounded-full animate-pulse"></span>
+                            Canal Prioritário
+                        </div>
+                    </div>
+                </div>
+
+                {/* Messages Area */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-black/50 min-h-0">
+                    {messages.map((msg, i) => (
+                        <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`
+                                max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed shadow-sm flex flex-col gap-1
+                                ${msg.role === 'user' 
+                                    ? 'bg-race-navy text-white rounded-tr-none' 
+                                    : 'bg-black border border-white/10 rounded-tl-none'}
+                            `}>
+
+                                <div>
+                                {msg.text.split('\n').map((line, idx) => (
+                                   <React.Fragment key={idx}>
+                                      {/* Basic Markdown-like rendering */}
+                                      {line.startsWith('**') ? 
+                                        <span className="font-bold block mt-2 text-race-navy">{line.replace(/\*\*/g, '')}</span> : 
+                                        line.startsWith('•') ? 
+                                        <div className="flex gap-2 ml-2 mt-1"><span className="text-race-yellow font-bold">•</span><span>{line.substring(1)}</span></div> :
+                                        line
+                                      }
+                                      {!line.startsWith('•') && <br/>}
+                                   </React.Fragment>
+                                ))}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                    {chatLoading && (
+                        <div className="flex justify-start">
+                            <div className="bg-white p-4 rounded-2xl rounded-tl-none border border-gray-200 shadow-sm flex items-center gap-2 text-xs font-bold text-gray-400">
+                                <Loader2 className="animate-spin" size={14} />
+                                Processando Estratégia...
+                            </div>
+                        </div>
+                    )}
+                    <div ref={chatEndRef} />
+                </div>
+
+                {/* Clear History Button */}
+                <div className="p-2 bg-black/50 flex justify-end">
+                  <button 
+                    onClick={() => {
+                      if (window.confirm('Tem certeza que deseja limpar o histórico do chat?')) {
+                        const initialMessage = { role: 'model', text: `🟢 Rádio Box: Olá ${currentUser.name}! Sou seu Engenheiro de Vendas. O sistema está online e pronto para traçar sua estratégia.` };
+                        setMessages([initialMessage]);
+                      }
+                    }}
+                    className="text-xs text-gray-500 hover:text-race-yellow transition-colors px-2 py-1"
+                  >
+                    Limpar Histórico
+                  </button>
+                </div>
+
+                {/* Quick Actions */}
+                <div className="p-2 bg-black/50 flex gap-2 overflow-x-auto custom-scrollbar">
+                    {QUICK_ACTIONS.map((action, i) => (
+                        <button 
+                            key={i}
+                            onClick={() => handleQuickResponse(action)}
+                            disabled={chatLoading}
+                            className="bg-black border border-white/10 px-3 py-2 rounded-lg text-xs font-bold text-gray-400 whitespace-nowrap hover:border-race-yellow hover:text-white transition-colors shrink-0 shadow-sm"
+                        >
+                            {action.label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Input Area */}
+                <form onSubmit={handleChatSubmit} className="p-4 bg-black/50 border-t border-white/10 flex gap-3">
+                    <input 
+                        type="text" 
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        placeholder="Pergunte sobre sua estratégia..."
+                        className="flex-1 bg-black border border-white/10 focus:border-race-yellow focus:ring-0 focus:outline-none rounded-xl px-4 font-medium transition-all text-white placeholder-gray-700"
+                        disabled={chatLoading}
+                    />
+                    <button 
+                        type="submit" 
+                        disabled={chatLoading || !input.trim()}
+                        className="bg-race-yellow text-race-dark p-3 rounded-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 shadow-lg"
+                    >
+                        <Send size={20} strokeWidth={2.5} />
+                    </button>
+                </form>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Tracker;

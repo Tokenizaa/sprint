@@ -1,0 +1,69 @@
+/* Custom CSS for chat component */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Ensure proper sizing for chat container */
+.chat-container {
+  height: calc(100vh - 120px); /* Adjust based on header/footer height */
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Improved chat layout */
+.chat-layout {
+  display: flex;
+  height: 100%;
+  width: 100%;
+}
+
+.chat-sidebar {
+  width: 250px;
+  min-width: 250px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.chat-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Animation for fade in */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .chat-sidebar {
+    position: absolute;
+    z-index: 30;
+  }
+  
+  .chat-main {
+    width: 100%;
+  }
+}

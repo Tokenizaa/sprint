@@ -1,0 +1,44 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0A0F1C;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#050505;stop-opacity:1" />
+    </linearGradient>
+    <pattern id="carbon" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
+      <rect width="10" height="10" fill="#121214"/>
+      <path d="M0 10L10 0M-2 2L2 -2M8 12L12 8" stroke="#1a1a1c" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#grad1)" />
+  <rect width="1200" height="630" fill="url(#carbon)" opacity="0.4" />
+
+  <!-- Speed Lines -->
+  <path d="M-100 100 L1300 100" stroke="white" stroke-opacity="0.1" stroke-width="1" />
+  <path d="M-100 530 L1300 530" stroke="white" stroke-opacity="0.1" stroke-width="1" />
+  
+  <!-- Yellow Accent Shape -->
+  <path d="M800 0 L950 0 L850 630 L700 630 Z" fill="#FAFF00" opacity="0.05" />
+  <path d="M850 0 L860 0 L760 630 L750 630 Z" fill="#FAFF00" opacity="0.2" />
+
+  <!-- Content Group -->
+  <g transform="translate(100, 315)">
+    <!-- Icon Placeholder (Flag/Trophy concept) -->
+    <circle cx="0" cy="-120" r="40" fill="#FAFF00" fill-opacity="0.1" />
+    <text x="0" y="-105" font-family="Arial, sans-serif" font-size="60" fill="#FAFF00" text-anchor="middle">&#x1F3C1;</text>
+
+    <!-- Main Title -->
+    <text x="0" y="-20" font-family="Arial, sans-serif" font-weight="900" font-style="italic" font-size="60" fill="white" letter-spacing="2">SPRINT FINAL</text>
+    
+    <!-- Brand -->
+    <text x="0" y="110" font-family="Arial, sans-serif" font-weight="900" font-style="italic" font-size="140" fill="#FAFF00" letter-spacing="-5">ALL-IN</text>
+    
+    <!-- Subtitle -->
+    <rect x="5" y="140" width="450" height="4" fill="#FAFF00" transform="skewX(-20)" />
+    <text x="0" y="180" font-family="Arial, sans-serif" font-weight="bold" font-size="30" fill="#A0A0A0" letter-spacing="4">A Corrida da Virada 2025</text>
+  </g>
+
+  <!-- Decorative Corner -->
+  <path d="M1150 580 L1200 580 L1200 630" fill="none" stroke="#FAFF00" stroke-width="4" />
+</svg>
